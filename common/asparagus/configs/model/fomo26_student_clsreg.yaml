@@ -1,0 +1,23 @@
+defaults:
+  - core/fomo26_student@
+
+dimensions: 3D
+
+pretrain_net:
+seg_net:
+cls_net: fomo26_student_clsreg
+plugin_seg_net:
+plugin_seg_train_n_last_params:
+
+# Required per-run overrides, e.g.:
+#   +model=fomo26_student_clsreg \
+#   model.checkpoint_path=/root/FOMO26/expr/ver5/checkpoints/step_280000.pt \
+#   model.teacher_name=brats \
+#   model.from_scratch=false
+checkpoint_path: ???
+teacher_name: ???
+from_scratch: false
+dropout_rate: 0.0
+stem_mode: frozen  # frozen (channel-repeat, frozen) | learnable (channel-repeat, trainable) | mixer (native 1ch frozen stem + learnable multimodal mixer)
+head_mode: base  # base (last enc stage + GAP + Linear, unchanged) | multistage_gem (see task1_head_arch/)
+fusion_mode: early  # early (unchanged, single multi-channel stem pass) | late (per-modality through frozen 1ch stem; requires stem_mode=frozen)

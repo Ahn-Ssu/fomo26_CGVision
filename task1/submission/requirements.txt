@@ -1,0 +1,6 @@
+nibabel
+numpy
+scipy
+SimpleITK
+scikit-image
+HD-BET==2.0.1

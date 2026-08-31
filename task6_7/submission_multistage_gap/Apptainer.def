@@ -1,0 +1,41 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+%labels
+    Author FOMO26 Challenge - Task 6/7 (Linear Probing / Fairness)
+    Version fomo26_task67_ver5_neutral_iso_multistage_gap_v1
+    Description FOMO26 Task 6/7 embedding extraction: ver5 checkpoint, neutral teacher-context (Convpass gate=0), 1mm-iso preprocessing matching pretraining, multistage GAP concat (stages 1-5, 1088-dim, fp32) instead of deepest-stage-only (320-dim)
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export LC_ALL=C.UTF-8
+
+%files
+    ./predict.py /app/predict.py
+    ./requirements.txt /app/requirements.txt
+    ./model /app/model
+
+%post
+    mkdir -p /input /output /app
+    pip install --no-cache-dir -U pip
+    pip install --no-cache-dir -r /app/requirements.txt
+    chmod +x /app/predict.py
+
+%runscript
+    exec python /app/predict.py "$@"
+
+%help
+    FOMO26 Task 6/7 -- ver5 checkpoint, neutral teacher-context (Convpass
+    gate=0, no teacher-specific adapter contribution), 1mm-isotropic
+    preprocessing matching pretraining (foreground crop + masked znorm).
+
+    Build:
+        apptainer build --fakeroot fomo26_task67_ver5_neutral_iso_multistage_gap.sif Apptainer.def --arch amd64
+
+    Run:
+        apptainer run --bind /path/to/input:/input:ro \
+            --bind /path/to/output:/output \
+            --nv \
+            fomo26_task67_ver5_neutral_iso_multistage_gap.sif \
+            --input /input/image.nii.gz \
+            --output /output/embeddings.npy

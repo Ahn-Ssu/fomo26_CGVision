@@ -1,0 +1,19 @@
+defaults:
+  - core/fomo26_student@
+
+dimensions: 3D
+
+pretrain_net:
+seg_net: fomo26_student_seg
+cls_net:
+plugin_seg_net:
+plugin_seg_train_n_last_params:
+
+# Required per-run overrides, e.g.:
+#   +model=fomo26_student_seg \
+#   model.checkpoint_path=/root/FOMO26/expr/pretraining/ver5/checkpoints/step_280000.pt \
+#   model.teacher_name=brats \
+#   model.from_scratch=false
+checkpoint_path: ???
+teacher_name: ???
+from_scratch: false

@@ -1,0 +1,41 @@
+dimensions: 3D
+# model.net (used by run.dir templating, ${model.net}__${model.dimensions})
+# resolves through model.cls_net -- same pattern as fomo26_student_clsreg.yaml,
+# NOT inherited automatically since this file doesn't pull in that yaml's
+# defaults (see note below).
+cls_net: fomo26_task1_arch18
+pretrain_net:
+seg_net:
+plugin_seg_net:
+plugin_seg_train_n_last_params:
+checkpoint_path: ???
+teacher_name: ???
+from_scratch: false
+dropout_rate: 0.3
+pooling_mode: avg
+feature_source: encoder_output
+modality_arch: early_learnable
+# NOT pulling in `core/fomo26_student@` as a default (unlike
+# fomo26_student_clsreg.yaml): that file's own `_cls_net` block defines
+# `stem_mode`/`head_mode`/`fusion_mode` interpolations, which don't exist as
+# top-level keys here -- Hydra's defaults-list merge is additive per-key, not
+# a full replace, so those would survive alongside this file's own `_cls_net`
+# and fail to resolve (`model.stem_mode` not found) at `instantiate()` time.
+# finetune_optim/weight_decay/nesterov/momentum copied directly below instead
+# of inherited, to keep this file self-contained and avoid that whole class
+# of stray-key bug.
+_cls_net:
+  _target_: asparagus.modules.networks.task1_arch18.FomoTask1Arch18Net
+  checkpoint_path: ${model.checkpoint_path}
+  teacher_name: ${model.teacher_name}
+  from_scratch: ${model.from_scratch}
+  dropout_rate: ${model.dropout_rate}
+  pooling_mode: ${model.pooling_mode}
+  feature_source: ${model.feature_source}
+  modality_arch: ${model.modality_arch}
+
+finetune_optim: AdamW
+finetune_lr: 1e-4
+weight_decay: 3e-5
+nesterov: True
+momentum: 0.99

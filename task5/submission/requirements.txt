@@ -1,0 +1,6 @@
+nibabel
+numpy
+SimpleITK
+scikit-image
+antspyx==0.6.3
+HD-BET==2.0.1

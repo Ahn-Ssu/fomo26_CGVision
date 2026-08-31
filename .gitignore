@@ -1,0 +1,19 @@
+# Model weights / checkpoints -- intentionally excluded, see top-level README
+*.pt
+*.pth
+*.ckpt
+*.sif
+*.tar.gz
+
+# Large template/data files
+*.nii.gz
+*.nii
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Logs
+*.log
+lightning_logs/

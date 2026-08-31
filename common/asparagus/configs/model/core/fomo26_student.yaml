@@ -1,0 +1,28 @@
+# Points Asparagus's model slot at our own FOMO26 StudentResEncUNet instead
+# of gardening_tools' resenc_unet (see fomo26_student.py module docstring for
+# why: checkpoint key names don't match, and there's no Convpass concept in
+# gardening_tools at all). checkpoint_path/teacher_name/from_scratch are the
+# knobs this wrapper needs; set at the top-level `+model=fomo26_student_clsreg`
+# config or overridden on the CLI.
+_cls_net:
+  _target_: asparagus.modules.networks.fomo26_student.FomoStudentClsRegNet
+  checkpoint_path: ${model.checkpoint_path}
+  teacher_name: ${model.teacher_name}
+  from_scratch: ${model.from_scratch}
+  dropout_rate: ${model.dropout_rate}
+  stem_mode: ${model.stem_mode}
+  head_mode: ${model.head_mode}
+  fusion_mode: ${model.fusion_mode}
+
+_seg_net:
+  _target_: asparagus.modules.networks.fomo26_student.FomoStudentSegNet
+  checkpoint_path: ${model.checkpoint_path}
+  teacher_name: ${model.teacher_name}
+  from_scratch: ${model.from_scratch}
+
+finetune_optim: AdamW
+finetune_lr: 1e-3
+weight_decay: 3e-5
+nesterov: True
+momentum: 0.99
+deep_supervision: False  # FomoStudentSegNet only returns a single full-res tensor -- see its docstring
