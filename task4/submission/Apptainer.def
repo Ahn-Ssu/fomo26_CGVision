@@ -1,0 +1,257 @@
+Bootstrap: docker
+From: pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime
+
+%labels
+    Author FOMO26 Challenge - Task 4 Multiclass Segmentation
+    Version v1.0.0
+    Description Best-of-fold 5-model ensemble (brats x3, vesselfm x2) -- fomo26_student_seg, encoder frozen / decoder scratch
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export LC_ALL=C.UTF-8
+    export PATH=/opt/ants/bin:$PATH
+    # CRITICAL: force HOME=/root at runtime, regardless of the invoking host
+    # user. Apptainer (unlike Docker) does NOT reset $HOME to match the
+    # container by default -- it keeps the HOST user's $HOME. %post below
+    # bundles HD-BET's weights to /root/hd-bet_params (since %post runs as
+    # root at build time, HOME=/root there), but if the container is later
+    # run by e.g. a non-root host account, $HOME would resolve to that
+    # account's home instead, HD_BET/paths.py's os.path.expanduser('~')
+    # would miss the bundled weights entirely, and HD-BET would try to
+    # re-download them at runtime with no/slow network -> stall/timeout. A
+    # sibling FOMO26 container hit exactly this build-time-vs-runtime $HOME
+    # mismatch. Forcing HOME=/root here makes the runtime path match the
+    # build-time bundling location unconditionally.
+    export HOME=/root
+
+%files
+    ./predict.py /app/predict.py
+    ./preprocess.py /app/preprocess.py
+    ./postprocess.py /app/postprocess.py
+    ./requirements.txt /app/requirements.txt
+    ./model /app/model
+    ./checkpoints /app/checkpoints
+    ./assets /app/assets
+    ./hd-bet_params/release_2.0.0 /root/hd-bet_params/release_2.0.0
+
+%post
+    set -e
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        unzip ca-certificates wget
+    rm -rf /var/lib/apt/lists/*
+
+    mkdir -p /input /output
+
+    # ANTs -- prebuilt binary (avoids a from-source build inside %post).
+    # ubuntu-22.04 build chosen for broad glibc compatibility; if the final
+    # base image resolves to a much newer/older Ubuntu, swap for the
+    # matching asset at https://github.com/ANTsX/ANTs/releases (or fall
+    # back to `apt-get install ants` / a from-source build).
+    mkdir -p /opt/ants
+    wget -q -O /tmp/ants.zip \
+        https://github.com/ANTsX/ANTs/releases/download/v2.6.5/ants-2.6.5-ubuntu-22.04-X64-gcc.zip
+    unzip -q /tmp/ants.zip -d /tmp/ants_extract
+    mv /tmp/ants_extract/*/bin /opt/ants/bin 2>/dev/null || mv /tmp/ants_extract/*/* /opt/ants/
+    rm -rf /tmp/ants.zip /tmp/ants_extract
+    /opt/ants/bin/antsRegistrationSyNQuick.sh --help > /dev/null 2>&1 || \
+        (echo "FATAL: ANTs binary did not run -- check glibc/Ubuntu version match" && exit 1)
+
+    # Python deps -- gardening_tools is public PyPI.
+    # --break-system-packages: the base image's Python 3.12 is marked
+    # PEP 668 "externally managed" (Debian/Ubuntu policy to protect a
+    # shared host's system Python from pip). That protection doesn't apply
+    # here -- this container's Python is dedicated solely to running this
+    # app, nothing else on the image depends on apt-installed Python
+    # packages, so overriding it is the standard fix for this exact
+    # situation in a single-purpose container build.
+    pip install --no-cache-dir --break-system-packages -U pip
+    pip install --no-cache-dir --break-system-packages -r /app/requirements.txt
+
+    # asparagus is DELIBERATELY NOT pip-installed. FomoStudentSegNet (the
+    # only asparagus symbol this container ever imports, vendored as
+    # model/net.py) has zero dependency on any OTHER asparagus module -- it
+    # only needs torch + gardening_tools + this container's own
+    # model/student.py. Installing the full asparagus package would pull in
+    # lightning, hydra-core, omegaconf, and wandb as hard dependencies, none
+    # of which this container's code path ever imports, and can silently
+    # downgrade the base image's own CUDA-matched torch build via
+    # asparagus's own pinned torch/torchvision versions -- verified this
+    # actually happens (torch 2.11.0+cu126 -> 2.6.0+cu124) and triggers a
+    # real pip dependency-resolver conflict ("monai 1.6.0 requires
+    # torch>=2.8.0, but you have torch 2.6.0") if attempted. Vendoring
+    # removes this whole class of risk at the source.
+    if grep -rn "^import wandb\|^from wandb\|^import mlflow\|^from mlflow" /app/*.py /app/model/*.py 2>/dev/null; then
+        echo "FATAL: wandb/mlflow import found in bundled app code -- should be unreachable" >&2
+        exit 1
+    fi
+    python -c "
+import importlib
+for pkg in ('wandb', 'mlflow', 'lightning', 'hydra', 'omegaconf'):
+    try:
+        importlib.import_module(pkg)
+        raise SystemExit(f'FATAL: {pkg} is installed and importable -- expected it to be absent')
+    except ModuleNotFoundError:
+        pass
+print('verified: wandb/mlflow/lightning/hydra/omegaconf are not installed (asparagus not pip-installed)')
+"
+
+    # FOMO26 forbids ANY network access from the submitted container. A real
+    # submission was marked INVALID for "attempts to access the internet" --
+    # traced to HD_BET.checkpoint_download.maybe_download_parameters(),
+    # which runs unconditionally on every `hd-bet` invocation and calls
+    # requests.get() against zenodo.org if its weight-cache check doesn't
+    # find the bundled weights (which can happen if $HOME doesn't resolve as
+    # expected in the actual execution environment, even though we bundle +
+    # force HOME=/root elsewhere). Rather than trust that check to always
+    # pass, physically remove the network-capable code from the installed
+    # package: rewrite checkpoint_download.py so maybe_download_parameters()
+    # only asserts the required files exist (hard, fast, local failure if
+    # not) instead of ever being ABLE to call requests.get() -- makes the
+    # "no internet access" guarantee independent of $HOME/env timing
+    # entirely, not just well-behaved. Checks dataset.json + plans.json +
+    # the fold checkpoint (everything
+    # nnUNetPredictor.initialize_from_trained_model_folder() actually
+    # reads), not just the checkpoint file.
+    python -c "
+path = __import__('HD_BET.checkpoint_download', fromlist=['x']).__file__
+open(path, 'w').write('''import os
+import zipfile
+from typing import Optional
+
+from batchgenerators.utilities.file_and_folder_operations import isfile, join, maybe_mkdir_p
+from HD_BET.paths import folder_with_parameter_files, ZENODO_DOWNLOAD_URL
+
+
+def install_model_from_zip_file(zip_file: str):
+    with zipfile.ZipFile(zip_file, \'r\') as zip_ref:
+        zip_ref.extractall(folder_with_parameter_files)
+
+
+def maybe_download_parameters():
+    required = [
+        join(folder_with_parameter_files, \'dataset.json\'),
+        join(folder_with_parameter_files, \'plans.json\'),
+        join(folder_with_parameter_files, \'fold_all\', \'checkpoint_final.pth\'),
+    ]
+    missing = [p for p in required if not isfile(p)]
+    assert not missing, (
+        f\"HD-BET files missing ({missing}) and network download is disabled \"
+        \"in this container (FOMO26 prohibits internet access) -- all \"
+        \"required files must be bundled into the image at build time.\"
+    )
+''')
+print('patched:', path)
+"
+    python -c "from HD_BET.checkpoint_download import maybe_download_parameters; import inspect; assert 'requests' not in inspect.getsource(__import__('HD_BET.checkpoint_download', fromlist=['x'])), 'patch failed -- requests still present'; print('verified: no requests import remains in checkpoint_download.py')"
+
+    # A real submission was marked INVALID for "attempts to access the
+    # internet" even AFTER the checkpoint_download.py patch above. Traced
+    # (via a socket.connect monkeypatch applied through PYTHONPATH's
+    # sitecustomize.py, which also covers the hd-bet subprocess, not just
+    # this container's own predict.py process) to nnUNetPredictor.
+    # predict_from_files() unconditionally creating a
+    # torch.multiprocessing.Manager() for worker-process coordination
+    # (nnunetv2/inference/data_iterators.py) -- this opens a local socket
+    # for IPC even when only 1 file is being predicted, which is HD-BET's
+    # only real use case here. Verified directly: family=AF_UNIX, address=
+    # /tmp/pymp-*/listener-* -- a purely local filesystem-based socket, no
+    # external host involved at all -- but FOMO26's network-access detector
+    # may not distinguish local AF_UNIX IPC from real external access.
+    # Fixed by patching HD_BET/hd_bet_prediction.py's hdbet_predict() to call
+    # nnUNetPredictor.predict_from_files_sequential() instead of
+    # predict_from_files() -- nnU-Net's own no-multiprocessing alternative.
+    # Since HD-BET only ever predicts exactly 1 file per invocation in this
+    # pipeline, the multiprocessing path was pure worker-spawn overhead with
+    # zero real parallelism benefit anyway -- switching to sequential
+    # measured slightly FASTER end to end (~89-93s vs ~99-101s), not slower.
+    python -c "
+path = __import__('HD_BET.hd_bet_prediction', fromlist=['x']).__file__
+src = open(path).read()
+old = '''    predictor.predict_from_files(
+        [[i] for i in input_files],
+        brain_mask_files,
+        save_probabilities=False,
+        overwrite=True,
+        num_processes_preprocessing=4,
+        num_processes_segmentation_export=8,
+        folder_with_segs_from_prev_stage=None,
+        num_parts=1,
+        part_id=0
+    )'''
+new = '''    predictor.predict_from_files_sequential(
+        [[i] for i in input_files],
+        brain_mask_files,
+        save_probabilities=False,
+        overwrite=True,
+        folder_with_segs_from_prev_stage=None,
+    )'''
+assert old in src, 'hd_bet_prediction.py layout changed -- patch needs updating'
+open(path, 'w').write(src.replace(old, new))
+print('patched:', path)
+"
+    python -c "from HD_BET.hd_bet_prediction import hdbet_predict; import inspect; src = inspect.getsource(hdbet_predict); assert 'predict_from_files_sequential' in src and 'predict_from_files(' not in src, 'patch failed'; print('verified: hdbet_predict() uses predict_from_files_sequential (no multiprocessing/local-socket IPC)')"
+
+    # `python` must resolve (container_validator runs `python --version`, not `python3`).
+    command -v python >/dev/null 2>&1 || ln -sf "$(command -v python3)" /usr/local/bin/python
+
+    # HD-BET's model weights and the 5 fold checkpoints + pretrain
+    # checkpoint are NOT included in this repository (see top-level
+    # README) -- they must be dropped into ./checkpoints/ and
+    # ./hd-bet_params/release_2.0.0/ (matching checkpoints/manifest.json's
+    # filenames) before running this build. HD_BET/paths.py resolves the
+    # cache dir as os.path.join(os.path.expanduser('~'), 'hd-bet_params',
+    # 'release_2.0.0') -- root's $HOME is /root here, hence the destination
+    # in %files above.
+    #
+    # Build-time self-test: fail the BUILD loudly right now if any required
+    # HD-BET file is missing, rather than only discovering it at first
+    # `hd-bet` invocation after the image is already shipped.
+    python -c "from HD_BET.checkpoint_download import maybe_download_parameters; maybe_download_parameters(); print('verified: all required HD-BET files present (dataset.json, plans.json, fold_all/checkpoint_final.pth)')"
+
+    # Apptainer SIF images mount read-only at runtime (unlike a Docker container's
+    # writable layer), so any incidental $HOME write that succeeds during THIS
+    # %post (a mutable build-time filesystem) will hard-fail at actual
+    # submission time instead. A cold-start test (fresh $HOME, pre-populated
+    # only with the bundled hd-bet_params above) revealed matplotlib's font
+    # cache (~/.cache/matplotlib, ~/.config/matplotlib) and CUDA's JIT/compute
+    # cache (~/.nv/ComputeCache), both pulled in transitively. Fix: symlink
+    # these three to /tmp (which Apptainer DOES mount writable at runtime)
+    # instead of leaving them as real directories baked into the read-only
+    # image layer. /root/hd-bet_params is deliberately EXCLUDED -- it holds
+    # real bundled weights that must be read, never written, so it stays a
+    # normal baked-in directory.
+    rm -rf /root/.cache /root/.config /root/.nv
+    mkdir -p /tmp/home_cache /tmp/home_config /tmp/home_nv
+    ln -sfn /tmp/home_cache /root/.cache
+    ln -sfn /tmp/home_config /root/.config
+    ln -sfn /tmp/home_nv /root/.nv
+
+    chmod +x /app/predict.py
+
+%runscript
+    exec python /app/predict.py "$@"
+
+%help
+    FOMO26 Task 4 (Multiclass Tissue Segmentation) -- best-of-fold 5-model
+    ensemble (brats fold1/2/4, vesselfm fold0/3; see checkpoints/manifest.json
+    and task4/README.md for how these were selected).
+
+    NOTE: model weights (checkpoints/*.ckpt, checkpoints/pretrain_step_280000.pt,
+    hd-bet_params/release_2.0.0/) are NOT included in this repository -- see
+    the top-level README for why, and drop your own copies into the matching
+    paths before building.
+
+    Build:
+        apptainer build --fakeroot /path/to/task4_ensemble.sif /path/to/Apptainer.def
+
+    Run directly:
+        apptainer run --nv \
+            --bind /path/to/input:/input:ro \
+            --bind /path/to/output:/output \
+            task4_ensemble.sif \
+            --t2 /input/t2w.nii.gz --output /output/segmentation.nii.gz
+
+    Validate with fomo26/container-validator:
+        python3 container_validator/validate.py --task task4 --sif /path/to/task4_ensemble.sif

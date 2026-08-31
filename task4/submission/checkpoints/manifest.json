@@ -1,0 +1,7 @@
+[
+  {"teacher_name": "vesselfm", "fold": 0, "checkpoint": "fold0_vesselfm_best.ckpt", "val_dice_avg": 0.4994},
+  {"teacher_name": "brats",    "fold": 1, "checkpoint": "fold1_brats_best.ckpt",    "val_dice_avg": 0.5480},
+  {"teacher_name": "brats",    "fold": 2, "checkpoint": "fold2_brats_best.ckpt",    "val_dice_avg": 0.5395},
+  {"teacher_name": "vesselfm", "fold": 3, "checkpoint": "fold3_vesselfm_best.ckpt", "val_dice_avg": 0.4905},
+  {"teacher_name": "brats",    "fold": 4, "checkpoint": "fold4_brats_best.ckpt",    "val_dice_avg": 0.4512}
+]

@@ -2,16 +2,22 @@
 
 Code for our FOMO26 challenge submissions: self-supervised pretraining on brain
 MRI (`pretraining/`), a shared finetuning framework (`common/asparagus/`), and
-per-task finetuning/submission code (`task1/`, `task3/`, `task5/`, `task6_7/`).
+per-task finetuning/submission code (`task1/`, `task3/`, `task4/`, `task5/`,
+`task6_7/`).
 
 **Pretrained/finetuned model weights are intentionally excluded from this
 repository** (checkpoints range from ~120MB to ~3GB each). Each task
 directory's `submission/` folder contains the exact `predict.py`/
 `preprocess.py`/model-architecture code used for our container submissions,
 minus the bundled weight files (`model/fold_checkpoints/*.pt`,
-`model/hdbet_weights/`, `model/checkpoint.pt`) and the MNI template NIfTI
-(`model/template/`, obtainable via
-[TemplateFlow](https://www.templateflow.org/), `MNI152NLin2009cAsym`).
+`model/hdbet_weights/`, `model/checkpoint.pt`, or for Task4,
+`checkpoints/*.ckpt` + `checkpoints/pretrain_step_280000.pt` +
+`hd-bet_params/`) and the MNI template NIfTI (`model/template/`, obtainable
+via [TemplateFlow](https://www.templateflow.org/), `MNI152NLin2009cAsym`).
+The one exception is Task4's `submission/assets/roi_reference_iso05.nii.gz`
+(73KB) — a small custom-built ROI reference grid (not a model weight, and
+not obtainable from any external template source), included so the exact
+preprocessing grid is reproducible.
 
 ## Structure
 
@@ -23,6 +29,7 @@ common/asparagus/    Shared finetuning framework (Hydra configs, Lightning
                      across all downstream tasks
 task1/               Infarct classification
 task3/               Brain age regression
+task4/               Multiclass tissue segmentation
 task5/               Polymicrogyria (PMG) classification
 task6_7/              Linear probing / fairness embeddings
 ```
@@ -36,11 +43,13 @@ Each task directory follows the same convention:
 - `analysis/` (where applicable) — diagnostic scripts that shaped a
   methodological decision (e.g. Task5's ventricle-masking augmentation)
 
-Note: Task2 and Task4 submissions were developed on a different machine in
-our team and aren't included in this snapshot. (`common/asparagus/asparagus/
-scripts/FOMO26/Task2_predict.py` and `Task4_predict.py` are present, but are
-unfilled framework boilerplate — `MODEL_DIR = None` — not our actual
-solutions for those tasks.)
+Note: Task2's submission was developed on a different machine in our team
+and isn't included in this snapshot (`common/asparagus/asparagus/scripts/
+FOMO26/Task2_predict.py` is present, but is unfilled framework boilerplate —
+`MODEL_DIR = None` — not our actual solution for that task). Task4's
+`scripts/FOMO26/Task4_predict.py` is similarly unfilled boilerplate and NOT
+our actual solution either — Task4's real submission code lives in
+`task4/submission/` per the same convention as the other tasks.
 
 ## Shared infrastructure
 

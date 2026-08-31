@@ -1,0 +1,24 @@
+# torch/torchvision are NOT pinned here -- the base image
+# (pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime) already ships a
+# CUDA-matched build; reinstalling via pip risks pulling a CPU wheel or a
+# CUDA version mismatch with the driver Apptainer injects at runtime.
+#
+# 2026-08-31: trimmed to exactly what this container's code actually
+# imports, traced transitively from predict.py/preprocess.py/postprocess.py/
+# networks/fomo26_student.py/networks/student.py -- lightning, hydra-core,
+# omegaconf, python-dotenv, Pillow, and torchmetrics were previously listed
+# here (mirroring asparagus's own pyproject.toml dependencies) but are never
+# imported anywhere in this container's actual runtime path; removed to keep
+# the installed footprint minimal (was also the source of a real
+# torch-downgrade + wandb-install issue via `pip install asparagus_src`,
+# which has since been replaced with vendoring the one file actually needed
+# -- see networks/fomo26_student.py and Apptainer.def's %post comment).
+nibabel>=5.3.2
+numpy>=1.23.1
+gardening_tools>=0.3.4
+HD-BET
+# monai -- FomoStudentSegNet.sliding_window_predict uses
+# monai.inferers.sliding_window_inference directly. Pinned to the exact
+# version this whole project's results (Dice numbers, TTA experiments,
+# timing) were actually measured against.
+monai==1.6.0

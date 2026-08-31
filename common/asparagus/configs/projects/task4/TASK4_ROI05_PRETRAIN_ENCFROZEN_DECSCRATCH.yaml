@@ -1,0 +1,61 @@
+# @package _global_
+# Task_4, 5-fold CV, pretrained FOMO26 multi-teacher student backbone
+# (step_280000.pt, teacher roster: anatomix/brats/vesselfm/vjepa/voco).
+# Encoder fully frozen (backbone frozen + its own selected-teacher Convpass
+# ALSO frozen via encoder_convpass_frozen=true), decoder reinitialized and
+# trained from scratch (decoder_scheme=scratch). teacher_name and data.fold
+# are meant to be overridden on the CLI per run:
+#   +projects/task4=TASK4_ROI05_PRETRAIN_ENCFROZEN_DECSCRATCH \
+#     model.teacher_name={anatomix,brats,vesselfm} \
+#     data.fold={0,1,2,3,4} data.test_split=TEST_task4_5fold_fold{N}
+defaults:
+  - /default_finetune_seg
+  - /model/fomo26_student_seg@model
+  - _self_
+
+task: Task_4_ROI05
+
+data:
+  train_split: split_task4_5fold
+  test_split: TEST_task4_5fold_fold0  # override per fold on the CLI
+  fold: 0  # override per fold on the CLI
+
+training:
+  patch_size: [128, 128, 128]
+  batch_size: 2
+  warmup_epochs: 10
+  decoder_warmup_epochs: 0
+  train_batches_per_epoch_per_device: 250
+  val_batches_per_epoch_per_device: 20  # ignored when full_volume_validation=true
+  check_val_every_n_epoch: 3
+  accumulate_grad_batches: 1
+  load_decoder: false
+  repeat_stem_weights: true
+  full_volume_validation: true
+  validation_mirror_tta: false
+  dice_include_background: false  # required false -- DiceCE do_bg contract assert in SegmentationModule
+  batch_dice: true  # required true -- DiceCE batch_dice contract assert in SegmentationModule
+  ckpt_monitor: val/full_dice_preprocessed
+  ckpt_monitor_mode: max
+  epochs: 100  # 2026-08-20: brats 5-fold convergence check showed val Dice plateaus by epoch ~45-70/200 (see brats_convergence.html) -- 100 gives margin with warmup_epochs=10 now landing at the intended 10%
+  milestone_steps: [6250, 12500, 18750, 25000]  # LongRunCallback: checkpoint every 25 epochs (train_batches_per_epoch_per_device=250 steps/epoch) so the curve can be inspected at intermediate points, not just best/last
+
+model:
+  checkpoint_path: /root/fomo26_segm_mk5/FOMO26/expr/pretraining/ver5/checkpoints/step_280000.pt
+  teacher_name: brats  # override per run: anatomix+brains | brats | vesselfm (checkpoint's real roster has "anatomix+brains", NOT "anatomix" -- verified via state_dict key inspection 2026-08-20 after a plain "anatomix" run crashed with AssertionError)
+  from_scratch: false
+  stem_mode: frozen  # fully-frozen encoder forward path (input_channels=1 for Task_4 so channel-repeat is a no-op anyway)
+  freeze_decoder: false  # overridden by decoder_scheme below
+  encoder_convpass_frozen: true  # encoder's own selected-teacher Convpass ALSO frozen -- 0 trainable encoder params
+  decoder_scheme: scratch  # decoder backbone (upsample/block conv+norm) reinitialized + trainable
+
+hardware:
+  compile_mode: null  # no C compiler on this box -- torch.compile/triton inductor fails at codegen otherwise
+
+logger:
+  wandb_logging: false
+
+transforms:
+  normalize: true  # image.pt stores raw t2w intensities -- z-norm must happen here
+  cpu_tr_transforms: CPU_seg_train_transforms  # spatial aug: rotation +-30, scale 0.7-1.4 (p=0.2 each) + mirror
+  gpu_tr_transforms: GPU_all_train_transforms  # intensity aug: blur, bias field, gamma, motion ghosting, Gibbs ringing, low-res sim, noise
