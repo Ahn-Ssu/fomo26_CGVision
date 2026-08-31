@@ -37,7 +37,10 @@ Each task directory follows the same convention:
   methodological decision (e.g. Task5's ventricle-masking augmentation)
 
 Note: Task2 and Task4 submissions were developed on a different machine in
-our team and aren't included in this snapshot.
+our team and aren't included in this snapshot. (`common/asparagus/asparagus/
+scripts/FOMO26/Task2_predict.py` and `Task4_predict.py` are present, but are
+unfilled framework boilerplate — `MODEL_DIR = None` — not our actual
+solutions for those tasks.)
 
 ## Shared infrastructure
 
