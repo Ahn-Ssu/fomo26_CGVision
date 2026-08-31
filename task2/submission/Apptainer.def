@@ -1,0 +1,100 @@
+Bootstrap: docker
+
+# Matches container-validator/templates/task2/Apptainer.def's base image
+# (validated by the challenge organizers for the grading hardware / H100).
+# Our pipeline was developed/benchmarked against torch==2.6.0+cu124; the ops
+# used (Conv3d, softmax, monai sliding_window_inference, bf16 autocast) are
+# stable across this range, but re-run container/predict.py inside the built
+# image once (see container/README.md "post-build smoke test") before relying
+# on it, since this exact torch/cuda combo was never exercised end-to-end
+# pre-build in this environment (apptainer isn't available inside the
+# authoring docker container -- ssh into the GPU server to build/test).
+From: pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime
+
+%labels
+    Author FOMO26 Challenge - Meningioma Segmentation Task
+    Version v4.0.0
+    Description AUGEF + Cutout3D + ModalityDropout(ch=2), per-fold best.ckpt, 10-fold ensemble, selective gamma TTA + LCC
+
+%environment
+    export PYTHONUNBUFFERED=1
+    export LC_ALL=C.UTF-8
+    export MODEL_DIR=/app/models
+    export PREDICT_IMPORT_ROOT=/app
+    export PATCH_SIZE=128
+
+%files
+    ./predict.py /app/predict.py
+    ./requirements.txt /app/requirements.txt
+    ./asparagus_pkg /app/asparagus_pkg
+    ./FOMO26 /app/FOMO26
+    ./models /app/models
+
+%post
+    mkdir -p /input /output /app
+
+    # --break-system-packages: this pytorch base image's Python is Debian's
+    # PEP-668 "externally managed" system Python (discovered 2026-08-12, first
+    # real build attempt -- pip refuses system-wide installs by default). Safe
+    # here: the container is single-purpose and ephemeral, no system package
+    # manager conflict is possible.
+    pip install --no-cache-dir -U pip --break-system-packages
+    pip install --no-cache-dir -r /app/requirements.txt --break-system-packages
+
+    chmod +x /app/predict.py
+
+    # Fail the build loudly if the import chain is broken -- cheaper to
+    # catch here than after a full apptainer build+push cycle.
+    python -c "
+import sys
+sys.path.insert(0, '/app/FOMO26')
+sys.path.insert(0, '/app')
+sys.path.insert(0, '/app/asparagus_pkg')
+from asparagus.modules.networks.fomo26_student import FomoStudentSegNet
+from asparagus.functional.reverse_preprocessing import reverse_preprocessing
+from FOMO26.data.normalize import asparagus_volume_wise_znorm
+from FOMO26.data.preprocess_raw import _sitk_resample
+print('[build check] all imports OK')
+"
+
+    # Fail the build loudly if the 10 fold checkpoints or the architecture-
+    # reference checkpoint are missing/truncated.
+    python -c "
+import glob, os
+folds = sorted(glob.glob('/app/models/model_fold*.ckpt'))
+assert len(folds) == 10, f'expected 10 model_fold*.ckpt, found {len(folds)}: {folds}'
+for p in folds:
+    assert os.path.getsize(p) > 1_000_000, f'{p} looks truncated ({os.path.getsize(p)} bytes)'
+pretrain = '/app/models/pretrain_arch.pt'
+assert os.path.exists(pretrain), f'missing {pretrain}'
+assert os.path.getsize(pretrain) > 1_000_000, f'{pretrain} looks truncated'
+print(f'[build check] all 10 fold checkpoints + pretrain_arch.pt present ({len(folds)} folds)')
+"
+
+%runscript
+    exec python /app/predict.py "$@"
+
+%help
+    FOMO26 Task 2 (Meningioma binary segmentation): AUGEF + Cutout3D + ModalityDropout(ch=2), per-fold best.ckpt, 10-fold ensemble, selective gamma TTA + LCC.
+    10-fold CV ensemble (averages softmax probabilities across all 10 fold
+    checkpoints, patch_size=128). Selective per-channel gamma TTA (flair=
+    1.5, dwi=1.0, swi_or_t2s=1.75) applied before inference, and largest-
+    connected-component post-processing applied to the final hard
+    prediction (see predict.py module docstring for the validation behind
+    both). No mirror TTA at inference (an ablation found both LR-only and
+    8-way mirror TTA hurt substantially on top of this recipe).
+
+    Build:
+        apptainer build --fakeroot /path/to/save/segmentation.sif Apptainer.def --arch amd64
+
+    Usage:
+        apptainer run --bind /path/to/input:/input:ro \
+            --bind /path/to/output:/output \
+            --nv \
+            segmentation.sif \
+            --flair /input/flair.nii.gz \
+            --dwi /input/dwi.nii.gz \
+            --swi /input/swi.nii.gz \
+            --output /output/segmentation.nii.gz
+
+        (use --t2s instead of --swi for cases with T2* instead of SWI)

@@ -1,0 +1,20 @@
+# Minimal inference-only dependency set. predict.py calls FomoStudentSegNet
+# and reverse_preprocessing directly -- it never imports
+# asparagus.modules.lightning_modules, so none of asparagus's *training*
+# dependencies (lightning, hydra-core, omegaconf, wandb, mlflow, lightly,
+# torchmetrics) are needed here (verified: every __init__.py between
+# asparagus/ and the two leaf modules used is empty, so nothing pulls that
+# chain in transitively -- see container/README.md benchmark notes).
+#
+# torch/torchvision are provided by the Apptainer.def base image
+# (pytorch/pytorch:2.11.0-cuda12.6-cudnn9-runtime, matching the framework's
+# validated torch 2.6.0+cu124 -- the base image is newer/cuda12.6 but
+# forward-compatible; do not pip-install a different torch version here, it
+# would fight the base image's own CUDA-matched build).
+monai==1.6.0
+nibabel==5.4.2
+numpy==2.4.4
+SimpleITK==2.5.6
+scipy==1.18.0
+scikit-image==0.26.0
+gardening_tools==0.3.5

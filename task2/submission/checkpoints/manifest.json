@@ -1,0 +1,12 @@
+[
+  {"fold": 0, "checkpoint": "model_fold0.ckpt", "best_epoch": 1,  "val_dice_avg": 0.1609},
+  {"fold": 1, "checkpoint": "model_fold1.ckpt", "best_epoch": 16, "val_dice_avg": 0.5413},
+  {"fold": 2, "checkpoint": "model_fold2.ckpt", "best_epoch": 16, "val_dice_avg": 0.4064},
+  {"fold": 3, "checkpoint": "model_fold3.ckpt", "best_epoch": 1,  "val_dice_avg": 0.0447},
+  {"fold": 4, "checkpoint": "model_fold4.ckpt", "best_epoch": 6,  "val_dice_avg": 0.6119},
+  {"fold": 5, "checkpoint": "model_fold5.ckpt", "best_epoch": 39, "val_dice_avg": 0.2244},
+  {"fold": 6, "checkpoint": "model_fold6.ckpt", "best_epoch": 14, "val_dice_avg": 0.4862},
+  {"fold": 7, "checkpoint": "model_fold7.ckpt", "best_epoch": 1,  "val_dice_avg": 0.0199},
+  {"fold": 8, "checkpoint": "model_fold8.ckpt", "best_epoch": 4,  "val_dice_avg": 0.1730},
+  {"fold": 9, "checkpoint": "model_fold9.ckpt", "best_epoch": 15, "val_dice_avg": 0.3354}
+]

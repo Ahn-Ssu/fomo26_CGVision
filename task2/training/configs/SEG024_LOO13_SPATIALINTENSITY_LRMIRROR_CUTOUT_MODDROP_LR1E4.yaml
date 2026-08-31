@@ -1,0 +1,62 @@
+# @package _global_
+# CX-SEG2-CUTOUT-MODDROP: user request 2026-08-21, on top of the AUGEF
+# recipe (SEG021: spatial+intensity augmentation, L-R-only mirror,
+# encoder_convpass_frozen=true, decoder_scheme=finetune, stem_mode=
+# learnable, lr=1e-4 -- the best-performing config found across the whole
+# archsearch). Adds two new regularizers to the GPU intensity preset,
+# aimed at reducing the model's learned dependency on any single
+# modality/spatial region (see asparagus/modules/transforms/cutout.py and
+# modality_dropout.py):
+#   - Torch_Cutout3D: zeroes a random cuboid region (same region across
+#     all channels), p_per_sample=0.15, size 10-30% of each spatial dim.
+#   - Torch_ModalityDropout: zeroes the 3rd modality channel (swi_or_t2s)
+#     entirely, p_per_sample=0.2 -- specifically targeted at that channel
+#     given known per-subject quality issues there (e.g. sub-20's t2s
+#     misregistration).
+#
+# Same task/split/patch/LR/epochs/milestone schedule as SEG021. Only
+# transforms.gpu_tr_transforms differs (new preset:
+# GPU_seg_train_transforms_mild_intensity_cutout_moddrop).
+defaults:
+  - /default_finetune_seg
+  - _self_
+
+task: SEG009i_FOMO26_Meningioma_ISO1MM
+
+data:
+  train_split: split_loo13
+  test_split: TEST_loo13_fold0
+  fold: 0
+
+training:
+  patch_size: [128, 128, 128]
+  batch_size: 2
+  warmup_epochs: 3
+  decoder_warmup_epochs: 0
+  train_batches_per_epoch_per_device: 250
+  val_batches_per_epoch_per_device: 20
+  check_val_every_n_epoch: 5
+  accumulate_grad_batches: 1
+  load_decoder: false
+  repeat_stem_weights: true
+  full_volume_validation: true
+  validation_mirror_tta: false
+  dice_include_background: false
+  batch_dice: true
+  ckpt_monitor: val/full_dice_preprocessed
+  ckpt_monitor_mode: max
+  epochs: 60
+  milestone_steps: [250,500,750,1000,1250,1500,1750,2000,2250,2500,2750,3000,3250,3500,3750,4000,4250,4500,4750,5000,5250,5500,5750,6000,6250,6500,7500,8750,10000,11250,12500,13750,15000]
+
+model:
+  from_scratch: false
+  finetune_lr: 1e-4
+  stem_mode: frozen
+
+logger:
+  wandb_logging: false
+
+transforms:
+  normalize: false
+  cpu_tr_transforms: CPU_seg_train_transforms_mild_spatial_lrmirror
+  gpu_tr_transforms: GPU_seg_train_transforms_mild_intensity_cutout_moddrop
