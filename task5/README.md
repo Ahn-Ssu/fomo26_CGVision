@@ -38,15 +38,20 @@ matched Gaussian noise (`Torch_LVFixedMask`, see
 `common/asparagus/asparagus/modules/transforms/presets/train.py`),
 denying the model that shortcut.
 
-![Lateral-ventricle + periventricular masking region](analysis/task5_lv_mask_illustration.png)
+![Lateral-ventricle + periventricular masking region on a real PMG case](analysis/task5_lv_mask_sub46.png)
 
-*Illustrative reconstruction* of the masked region (the exact `_LV_BBOX_AFFINE`
-coordinates used in training, proportionally rescaled onto an MNI152 T1
-template as a stand-in, since the original PMG dataset no longer exists in
-this environment). The original per-subject SmoothGrad before/after
-comparison referenced above was run against the real PMG dataset and fold
-checkpoints, neither of which survive in this snapshot; this figure shows
-*where* the mask sits, not the attention shift itself.
+*Illustrative reconstruction* (`analysis/task5_lv_mask_overlay_realcase.py`)
+of the masked region on a real PMG case (sub_46), preprocessed with the same
+steps as the actual affine submission (HD-BET → rigid+affine registration to
+MNI152NLin2009cAsym → warp onto the fixed physical crop box → center-pad to
+the training grid) so the exact `_LV_BBOX_AFFINE` coordinates apply verbatim,
+with no rescaling. The original per-subject SmoothGrad before/after
+comparison referenced above was run against the original fold checkpoints,
+which don't survive in this snapshot (only the code does); this figure shows
+*where* the mask sits, not the attention shift itself. An earlier, cruder
+version of this figure (`analysis/task5_lv_mask_illustration.png`) used the
+bare MNI152 template with a proportionally-rescaled bbox as a stand-in,
+before this real-case reconstruction was made.
 
 Evaluated with the SAME masking applied at
 test time (the fair comparison, since training never saw a clean ventricle):
