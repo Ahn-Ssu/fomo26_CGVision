@@ -36,7 +36,19 @@ then re-expanded to also cover immediately surrounding tissue).
 During training, this fixed region is always corrupted with local-mean/std-
 matched Gaussian noise (`Torch_LVFixedMask`, see
 `common/asparagus/asparagus/modules/transforms/presets/train.py`),
-denying the model that shortcut. Evaluated with the SAME masking applied at
+denying the model that shortcut.
+
+![Lateral-ventricle + periventricular masking region](analysis/task5_lv_mask_illustration.png)
+
+*Illustrative reconstruction* of the masked region (the exact `_LV_BBOX_AFFINE`
+coordinates used in training, proportionally rescaled onto an MNI152 T1
+template as a stand-in, since the original PMG dataset no longer exists in
+this environment). The original per-subject SmoothGrad before/after
+comparison referenced above was run against the real PMG dataset and fold
+checkpoints, neither of which survive in this snapshot; this figure shows
+*where* the mask sits, not the attention shift itself.
+
+Evaluated with the SAME masking applied at
 test time (the fair comparison, since training never saw a clean ventricle):
 official-style pooled held-out AUROC climbed monotonically with training
 length — 0.868 (10 epochs) → 0.882 (20) → **0.901 (30)** — with no
