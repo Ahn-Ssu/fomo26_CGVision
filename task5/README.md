@@ -38,20 +38,24 @@ matched Gaussian noise (`Torch_LVFixedMask`, see
 `common/asparagus/asparagus/modules/transforms/presets/train.py`),
 denying the model that shortcut.
 
-![Lateral-ventricle + periventricular masking region on a real PMG case](analysis/task5_lv_mask_sub46.png)
+![Torch_LVFixedMask noise corruption of the LV/periventricular region on a real PMG case](analysis/task5_lv_mask_sub39.png)
 
 *Illustrative reconstruction* (`analysis/task5_lv_mask_overlay_realcase.py`)
-of the masked region on a real PMG case (sub_46), preprocessed with the same
-steps as the actual affine submission (HD-BET → rigid+affine registration to
-MNI152NLin2009cAsym → warp onto the fixed physical crop box → center-pad to
-the training grid) so the exact `_LV_BBOX_AFFINE` coordinates apply verbatim,
-with no rescaling. The original per-subject SmoothGrad before/after
-comparison referenced above was run against the original fold checkpoints,
-which don't survive in this snapshot (only the code does); this figure shows
-*where* the mask sits, not the attention shift itself. An earlier, cruder
-version of this figure (`analysis/task5_lv_mask_illustration.png`) used the
-bare MNI152 template with a proportionally-rescaled bbox as a stand-in,
-before this real-case reconstruction was made.
+of the ACTUAL `Torch_LVFixedMask` noise corruption on a real PMG case
+(sub_39), preprocessed with the same steps as the affine submission (HD-BET
+→ rigid+affine registration to MNI152NLin2009cAsym → warp onto the fixed
+physical crop box → center-pad to the training grid) so the exact
+`_LV_BBOX_AFFINE` coordinates apply verbatim, with no rescaling — the bottom
+row is the verbatim `Torch_LVFixedMask` transform applied to this subject's
+own preprocessed volume (local-mean/std-matched Gaussian noise, clamped to
+the image's own min/max), i.e. what the model actually trains on, not just
+an outline of where the box sits. The original per-subject SmoothGrad
+before/after comparison referenced above was run against the original fold
+checkpoints, which don't survive in this snapshot (only the code does).
+Two earlier, cruder versions of this figure remain in `analysis/` for
+reference: `task5_lv_mask_illustration.png` (bare MNI152 template, bbox only
+proportionally rescaled) and `task5_lv_mask_sub46.png` (a real case, but only
+a colored bbox outline rather than the actual noise corruption).
 
 Evaluated with the SAME masking applied at
 test time (the fair comparison, since training never saw a clean ventricle):

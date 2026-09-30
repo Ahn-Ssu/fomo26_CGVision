@@ -8,6 +8,12 @@ task5_lv_mask_illustration.png (an MNI-template stand-in with the bbox only
 proportionally approximated), this reproduces the EXACT training-time grid,
 so the bbox coordinates are used verbatim, no rescaling.
 
+Also applies the ACTUAL `Torch_LVFixedMask` noise corruption (verbatim
+logic, see that class's __call__) to the bbox region -- local-mean/std-
+matched Gaussian noise clamped to the image's own [min, max] -- so the
+figure shows what the model actually trains on (a noise-corrupted
+ventricle region), not just a colored outline of where the box sits.
+
 Why this is a separate, standalone script rather than reusing
 submission/preprocess.py directly: preprocess.py uses antspyx (`import
 ants`) for registration; this analysis was run in an environment that only
@@ -92,6 +98,25 @@ def build_reference_grid(template_path, out_path):
     sitk.WriteImage(ref, out_path)
 
 
+def apply_lv_fixed_mask_noise(img, bbox, seed=0):
+    """Verbatim port of Torch_LVFixedMask.__call__ (see
+    common/asparagus/asparagus/modules/transforms/presets/train.py) onto a
+    plain numpy array: local-mean/std-matched Gaussian noise, clamped to the
+    image's own [min, max], replacing the ENTIRE bbox every time (not a
+    random sub-region -- see Torch_LVRandomCutout for that variant)."""
+    rng = np.random.default_rng(seed)
+    x0, x1, y0, y1, z0, z1 = bbox
+    out = img.copy()
+    vlo, vhi = out.min(), out.max()
+    patch = out[x0:x1 + 1, y0:y1 + 1, z0:z1 + 1]
+    local_mean = patch.mean()
+    local_std = max(patch.std(), 1e-3)
+    noise = rng.standard_normal(patch.shape).astype(np.float32) * local_std + local_mean
+    noise = np.clip(noise, vlo, vhi)
+    out[x0:x1 + 1, y0:y1 + 1, z0:z1 + 1] = noise
+    return out
+
+
 def resample_1mm(t1_path, out_path):
     img = sitk.ReadImage(t1_path, sitk.sitkFloat32)
     orig_spacing, orig_size = img.GetSpacing(), img.GetSize()
@@ -142,35 +167,31 @@ def main():
     assert img.shape == FINAL_SHAPE
 
     x0, x1, y0, y1, z0, z1 = LV_BBOX_AFFINE
-    mask = np.zeros(FINAL_SHAPE, dtype=bool)
-    mask[x0:x1 + 1, y0:y1 + 1, z0:z1 + 1] = True
     cx, cy, cz = (x0 + x1) // 2, (y0 + y1) // 2, (z0 + z1) // 2
+
+    masked = apply_lv_fixed_mask_noise(img, LV_BBOX_AFFINE, seed=0)
 
     fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     views = [
-        ("Sagittal", img[cx, :, :], mask[cx, :, :]),
-        ("Coronal", img[:, cy, :], mask[:, cy, :]),
-        ("Axial", img[:, :, cz], mask[:, :, cz]),
+        ("Sagittal", img[cx, :, :], masked[cx, :, :]),
+        ("Coronal", img[:, cy, :], masked[:, cy, :]),
+        ("Axial", img[:, :, cz], masked[:, :, cz]),
     ]
-    for col, (name, sl, msl) in enumerate(views):
+    for col, (name, raw_sl, masked_sl) in enumerate(views):
         ax = axes[0, col]
-        ax.imshow(sl.T, cmap="gray", origin="lower")
-        ax.set_title(f"{name} (real PMG case)")
+        ax.imshow(raw_sl.T, cmap="gray", origin="lower")
+        ax.set_title(f"{name} (raw, real PMG case)")
         ax.axis("off")
 
         ax2 = axes[1, col]
-        ax2.imshow(sl.T, cmap="gray", origin="lower")
-        overlay = np.zeros((*msl.T.shape, 4))
-        overlay[msl.T, 0] = 1.0
-        overlay[msl.T, 3] = 0.45
-        ax2.imshow(overlay, origin="lower")
-        ax2.set_title(f"{name} + masked LV/periventricular bbox")
+        ax2.imshow(masked_sl.T, cmap="gray", origin="lower")
+        ax2.set_title(f"{name} + Torch_LVFixedMask noise")
         ax2.axis("off")
 
     fig.suptitle(
-        "Task 5: fixed lateral-ventricle + periventricular masking region\n"
-        "(HD-BET + rigid+affine registration to MNI152NLin2009cAsym,\n"
-        "warped onto the exact fixed crop box used in training, no coordinate rescaling)",
+        "Task 5: actual Torch_LVFixedMask noise corruption of the fixed\n"
+        "lateral-ventricle + periventricular region (HD-BET + rigid+affine\n"
+        "registration to MNI152NLin2009cAsym, exact training grid, no rescaling)",
         fontsize=12,
     )
     plt.tight_layout()
